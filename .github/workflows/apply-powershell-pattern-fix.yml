@@ -24,22 +24,26 @@ jobs:
         shell: bash
         run: |
           python3 <<'PY'
+          import re
           from pathlib import Path
 
           source_path = Path('src/JestProcessManagement/JestProcess.ts')
           source = source_path.read_text()
-          old = '''  private quoteFilePattern(aString: string): string {
-            return `"${removeSurroundingQuote(aString)}"`;
-          }'''
-          new = '''  private quoteFilePattern(aString: string): string {
+          replacement = '''  private quoteFilePattern(aString: string): string {
             return shellQuote(
               removeSurroundingQuote(aString),
               this.extContext.settings.shell.toSetting()
             );
           }'''
-          if old not in source:
+          source, count = re.subn(
+              r'  private quoteFilePattern\(aString: string\): string \{\n\s+return `"\$\{removeSurroundingQuote\(aString\)\}"`;\n  \}',
+              replacement,
+              source,
+              count=1,
+          )
+          if count != 1:
               raise RuntimeError('source replacement target not found')
-          source_path.write_text(source.replace(old, new, 1))
+          source_path.write_text(source)
 
           test_path = Path('tests/JestProcessManagement/JestProcess.test.ts')
           test = test_path.read_text()
