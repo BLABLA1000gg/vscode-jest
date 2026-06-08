@@ -31,10 +31,13 @@ jobs:
           start = source.index('  private quoteFilePattern(aString: string): string {')
           end = source.index('\n  }', start) + len('\n  }')
           replacement = '''  private quoteFilePattern(aString: string): string {
-            return shellQuote(
-              removeSurroundingQuote(aString),
-              this.extContext.settings.shell.toSetting()
-            );
+            const pattern = removeSurroundingQuote(aString);
+            const shell = this.extContext.settings.shell.toSetting();
+            const shellPath = typeof shell === 'string' ? shell : shell?.path;
+            if (/powershell|pwsh/i.test(shellPath ?? '')) {
+              return shellQuote(pattern, shell);
+            }
+            return `"${pattern}"`;
           }'''
           source_path.write_text(source[:start] + replacement + source[end:])
 
