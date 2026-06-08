@@ -1,0 +1,36 @@
+name: Format and verify PowerShell fix
+
+on:
+  push:
+    branches: [fix/powershell-test-path-pattern]
+
+permissions:
+  contents: write
+
+jobs:
+  format-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/powershell-test-path-pattern
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - name: Format changed files
+        run: yarn prettier --write src/JestProcessManagement/JestProcess.ts tests/JestProcessManagement/JestProcess.test.ts
+      - run: yarn eslint src/JestProcessManagement/JestProcess.ts tests/JestProcessManagement/JestProcess.test.ts
+      - run: yarn test tests/JestProcessManagement/JestProcess.test.ts --runInBand
+      - run: yarn tsc
+      - name: Commit formatted patch
+        shell: bash
+        run: |
+          rm .github/workflows/format-powershell-pattern-fix.yml
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add src/JestProcessManagement/JestProcess.ts tests/JestProcessManagement/JestProcess.test.ts .github/workflows/format-powershell-pattern-fix.yml
+          git commit -m "chore: format PowerShell pattern fix"
+          git push
