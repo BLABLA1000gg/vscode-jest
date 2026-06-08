@@ -1,0 +1,59 @@
+name: Apply PowerShell test path pattern fix
+
+on:
+  push:
+    branches: [fix/powershell-test-path-pattern]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/powershell-test-path-pattern
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - name: Apply focused fix and regression test
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const sourcePath = 'src/JestProcessManagement/JestProcess.ts';
+          let source = fs.readFileSync(sourcePath, 'utf8');
+          source = source.replace(
+            `  private quoteFilePattern(aString: string): string {\n    return \\`\\"\${removeSurroundingQuote(aString)}\\"\\`;\n  }`,
+            `  private quoteFilePattern(aString: string): string {\n    return shellQuote(\n      removeSurroundingQuote(aString),\n      this.extContext.settings.shell.toSetting()\n    );\n  }`
+          );
+          if (!source.includes('this.extContext.settings.shell.toSetting()')) {
+            throw new Error('source replacement failed');
+          }
+          fs.writeFileSync(sourcePath, source);
+
+          const testPath = 'tests/JestProcessManagement/JestProcess.test.ts';
+          let test = fs.readFileSync(testPath, 'utf8');
+          const marker = `    describe('supports jest v30 options', () => {`;
+          const regression = `    it('quotes test path patterns for PowerShell without shell re-escaping', () => {\n      mockPlatform.mockReturnValue('win32');\n      extContext.settings.shell.toSetting.mockReturnValue('pwsh');\n      const request = mockRequest('by-file-pattern', {\n        testFileNamePattern: 'C:\\\\repo\\\\src\\\\example.test.ts',\n      });\n\n      jestProcess = new JestProcess(extContext, request);\n      jestProcess.start();\n\n      const [, options] = RunnerClassMock.mock.calls[0];\n      expect(options.args.args).toContain(\n        \'C:\\\\\\\\repo\\\\\\\\src\\\\\\\\example\\\\.test\\\\.ts\'\n      );\n    });\n`;
+          if (!test.includes(marker)) throw new Error('test insertion marker not found');
+          test = test.replace(marker, regression + marker);
+          fs.writeFileSync(testPath, test);
+          NODE
+      - run: yarn install --frozen-lockfile
+      - run: yarn test tests/JestProcessManagement/JestProcess.test.ts --runInBand
+      - run: yarn tsc
+      - name: Commit clean patch
+        shell: bash
+        run: |
+          rm .github/workflows/apply-powershell-pattern-fix.yml
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add src/JestProcessManagement/JestProcess.ts tests/JestProcessManagement/JestProcess.test.ts .github/workflows/apply-powershell-pattern-fix.yml
+          git commit -m "fix: quote test path patterns for PowerShell"
+          git push
